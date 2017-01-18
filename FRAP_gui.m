@@ -22,7 +22,7 @@ function varargout = FRAP_gui(varargin)
 
 % Edit the above text to modify the response to help FRAP_gui
 
-% Last Modified by GUIDE v2.5 16-Jan-2017 17:00:08
+% Last Modified by GUIDE v2.5 18-Jan-2017 11:54:15
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -223,7 +223,14 @@ function bin_button_Callback(hObject, eventdata, handles)
 %Threshold
 thresh = multithresh(handles.laser_gfp);
 %make binary mask
-im_bin = handles.laser_gfp > thresh;
+im_pre_bin = handles.laser_gfp > thresh;
+%set all zero values in im_pre_bin to min values of im_pre_bin index
+im_parsed = handles.laser_gfp(im_pre_bin);
+im_min = min(im_parsed(:));
+handles.laser_gfp(~im_pre_bin) = im_min;
+%repeat thresholding to generate im_bin
+thresh2 = multithresh(handles.laser_gfp);
+im_bin = handles.laser_gfp > thresh2;
 %plot binary mask in axes2
 subplot(handles.axes2);
 imshow(im_bin);
@@ -245,7 +252,7 @@ subplot(handles.axes1);
 %draw a rectangle
 h = imrect;
 %get position coordinates of rectangle
-pos_sig_bg = wait(h);
+pos_sig_bg = ceil(wait(h));
 handles.pos_sig_bg = pos_sig_bg;
 %sample the GFP image
 im_sig_bg = handles.pre_gfp{slider_value}(round(pos_sig_bg(2)):round(pos_sig_bg(2))+round((pos_sig_bg(4))),round(pos_sig_bg(1)):...
@@ -268,7 +275,7 @@ subplot(handles.axes1);
 %draw a rectangle
 h = imrect;
 %get position coordinates of rectangle
-pos_ref = wait(h);
+pos_ref = ceil(wait(h));
 handles.pos_ref = pos_ref;
 %sample the GFP image
 im_ref = handles.pre_gfp{slider_value}(round(pos_ref(2)):round(pos_ref(2))+round((pos_ref(4))),round(pos_ref(1)):...
@@ -291,7 +298,7 @@ subplot(handles.axes1);
 %draw a rectangle
 h = imrect;
 %get position coordinates of rectangle
-pos_ref_bg = wait(h);
+pos_ref_bg = ceil(wait(h));
 handles.pos_ref_bg = pos_ref_bg;
 %sample the GFP image
 im_ref_bg = handles.pre_gfp{slider_value}(round(pos_ref_bg(2)):round(pos_ref_bg(2))+round((pos_ref_bg(4))),round(pos_ref_bg(1)):...
@@ -315,7 +322,7 @@ subplot(handles.axes1);
 %draw a rectangle
 h = imrect;
 %get position coordinates of rectangle
-pos_sig = wait(h);
+pos_sig = ceil(wait(h));
 handles.pos_sig = pos_sig;
 %sample the GFP image
 im_sig = handles.pre_gfp{slider_value}(round(pos_sig(2)):round(pos_sig(2))+round((pos_sig(4))),round(pos_sig(1)):...
@@ -353,9 +360,14 @@ function frap_button_Callback(hObject, eventdata, handles)
 % hObject    handle to frap_button (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-%% Calculate FRAP curve
-%load binary mask
+%% Calculate FRAP curves
+%load binary masks
 im_bin = handles.im_bin;
+im_bin_resize = handles.im_bin_resize;
+%create mask of unbleached portion or nucleus
+im_unbleach_bin = im_bin + im_bin_resize;
+im_unbleach_bin = im_unbleach_bin == 1;
+
 %load all positional information
 pos_sig_bg = handles.pos_sig_bg;
 pos_ref = handles.pos_ref;
@@ -365,6 +377,7 @@ total_planes = handles.post_plane_num + 1;
 %pre-allocate vector
 mean_sig = zeros([total_planes 1]);
 mean_sig_bg = zeros([total_planes 1]);
+mean_unbleach = zeros([total_planes 1]);
 mean_ref = zeros([total_planes 1]);
 mean_ref_bg = zeros([total_planes 1]);
 for n = 1:(total_planes)
@@ -384,12 +397,14 @@ ref_bg = im(round(pos_ref_bg(2)):round(pos_ref_bg(2))+round((pos_ref_bg(4))),rou
 %calc mean intensity value of each parsed position
 mean_sig(n,1) = mean(im(im_bin));
 mean_sig_bg(n,1) = mean(sig_bg(:));
+mean_unbleach(n,1) = mean(im(im_unbleach_bin));
 mean_ref(n,1) = mean(ref(:));
 mean_ref_bg(n,1) = mean(ref_bg(:));
 end
 
 %% Calculate BG corr values
 mean_sig_bg_corr = mean_sig - mean_sig_bg;
+mean_unbleach_bg_corr = mean_unbleach - mean_sig_bg;
 mean_ref_bg_corr = mean_ref - mean_ref_bg;
 %% Photobleach correction
 %since first set is image stack only correct bleaching in post timelapse
@@ -401,14 +416,154 @@ ref_slope = linear_coeff(1);
 corr_vect = -ref_slope .* timepoints;
 corr_vect = [0;corr_vect];
 sig_bg_photo_corr = mean_sig_bg_corr + corr_vect;
+unbleach_bg_photo_corr = mean_unbleach_bg_corr + corr_vect;
 ref_bg_photo_corr = mean_ref_bg_corr + corr_vect;
 %% Create normalized signal and reference data
 sig_norm = sig_bg_photo_corr./sig_bg_photo_corr(1);
+unbleach_norm = unbleach_bg_photo_corr./unbleach_bg_photo_corr(1);
 ref_norm =ref_bg_photo_corr./ref_bg_photo_corr(1);
 %plot out the normalized data
 subplot(handles.axes4);
 plot(sig_norm);
 hold on;
+plot(unbleach_norm);
 plot(ref_norm);
+legend('Bleached', 'Unbleached', 'Reference');
 hold off;
+%% Save data to MAT file
+%load in relevant data
+bleach_fraction = handles.bleach_fraction;
+nuc_area = handles.nuc_area;
+laser_area = handles.laser_area;
+save('FRAP.mat', 'pos*', 'sig*', 'unbleach*',...
+    '*ref*', 'bleach_fraction', '*_area');
 
+
+% --- Executes on button press in erode_button.
+function erode_button_Callback(hObject, eventdata, handles)
+% hObject    handle to erode_button (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+%% Erode im_bin
+%use disk structural element
+se_disk = strel('disk',1');
+handles.im_nuc_bin = imerode(handles.im_nuc_bin,se_disk);
+subplot(handles.axes5);
+imshow(handles.im_nuc_bin,[]);
+%Update handles
+guidata(hObject,handles);
+
+
+% --- Executes on button press in nuclear_button.
+function nuclear_button_Callback(hObject, eventdata, handles)
+% hObject    handle to nuclear_button (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+%get the current plane number for pre_slider
+slider_value = get(handles.pre_slider,'Value');
+%change the plot to axes1
+subplot(handles.axes1);
+%draw a rectangle
+h = imrect;
+%get position coordinates of rectangle and add to handles
+pos_nuc = ceil(wait(h));
+handles.pos_nuc = pos_nuc;
+%sample the GFP image
+im_nuc = handles.pre_gfp{slider_value}(round(pos_nuc(2)):round(pos_nuc(2))+round((pos_nuc(4))),round(pos_nuc(1)):...
+    round(pos_nuc(1))+ round(pos_nuc(3)));
+handles.im_nuc = im_nuc;
+mean_im_nuc = round(mean(im_nuc(:)));
+handles.mean_im_nuc = mean_im_nuc;
+set(handles.nuclear_text, 'String', num2str(mean_im_nuc));
+guidata(hObject,handles);
+
+
+% --- Executes on button press in nuc_bin_button.
+function nuc_bin_button_Callback(hObject, eventdata, handles)
+% hObject    handle to nuc_bin_button (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+%% Use BG sub and thresholding to generate a nuclear binary for area
+%BG sub
+im_nuc_sub = handles.im_nuc - handles.sig_bg;
+%threshold using multithresh
+thresh = multithresh(im_nuc_sub);
+%create nuclear binary image
+im_nuc_bin = im_nuc_sub > thresh;
+%display nuclear binary on axes5 for user inspection and alteration
+subplot(handles.axes5);
+imshow(im_nuc_bin);
+handles.im_nuc_bin = im_nuc_bin;
+%Update handles structure
+guidata(hObject,handles);
+
+% --- Executes on button press in dilate_button.
+function dilate_button_Callback(hObject, eventdata, handles)
+% hObject    handle to dilate_button (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+%% Dilate im_bin
+%use disk structural element
+se_disk = strel('disk',1');
+handles.im_nuc_bin = imdilate(handles.im_nuc_bin,se_disk);
+subplot(handles.axes5);
+imshow(handles.im_nuc_bin,[]);
+%Update handles
+guidata(hObject,handles);
+
+
+% --- Executes on button press in overlay_nuc_button.
+function overlay_nuc_button_Callback(hObject, eventdata, handles)
+% hObject    handle to overlay_nuc_button (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+%% Add binary mask to pre image
+%load in im_nuc_bin and resize to original image
+im_nuc_bin = handles.im_nuc_bin;
+%get pos_nuc
+pos_nuc = handles.pos_nuc;
+%load pre_slider value
+pre_slider_value = get(handles.pre_slider,'Value');
+%load correct gfp image plane
+im = handles.pre_gfp{pre_slider_value};
+%% Pad the binary image back to the orginal size
+[im_y, im_x, ~] = size(im);
+x_pad_1 = zeros(pos_nuc(4) + 1, pos_nuc(1) - 1);
+im_bin_resize = horzcat(x_pad_1,im_nuc_bin);
+[~,im_bin_resize_width] = size(im_bin_resize);
+x_pad_2 = zeros(pos_nuc(4) +1, im_x - im_bin_resize_width);
+im_bin_resize = horzcat(im_bin_resize, x_pad_2);
+
+y_pad_1 = zeros(pos_nuc(2) - 1, im_x);
+im_bin_resize = vertcat(y_pad_1,im_bin_resize);
+[im_bin_resize_height, ~] = size(im_bin_resize);
+y_pad_2 = zeros(im_y - im_bin_resize_height, im_x);
+im_bin_resize = vertcat(im_bin_resize, y_pad_2);
+
+%find max of image
+im_max = max(im(:));
+%use logical indexing to set im_bin pixels to max intensity
+im(logical(im_bin_resize)) = im_max;
+%update axes1 to show new image
+subplot(handles.axes1);
+imshow(im,[]);
+%Add im_bin_resize to handles and update handles
+handles.im_bin_resize = im_bin_resize;
+guidata(hObject,handles);
+
+% --- Executes on button press in area_button.
+function area_button_Callback(hObject, eventdata, handles)
+% hObject    handle to area_button (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+%% Calculate percent of nucleus bleached
+%calculate areas of binary images
+nuc_stats = regionprops(handles.im_nuc_bin,'Area');
+laser_stats = regionprops(handles.im_bin,'Area');
+bleach_fraction = laser_stats.Area/nuc_stats.Area;
+set(handles.area_text, 'String', num2str(round(bleach_fraction,2)));
+%Update handles
+handles.nuc_area = nuc_stats.Area;
+handles.laser_area = laser_stats.Area;
+handles.bleach_fraction = bleach_fraction;
+guidata(hObject,handles);
