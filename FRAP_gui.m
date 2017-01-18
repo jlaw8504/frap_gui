@@ -81,6 +81,8 @@ function pre_button_Callback(hObject, eventdata, handles)
 
 %% Open Pre-laser Image Stack
 pre_file = uigetfile('*.*');
+[~,name,~] = fileparts(pre_file);
+handles.filename = name;
 pre_data = bfopen(pre_file);
 %% Isolate GFP (Color 1)
 %parse the plane, Z, and color information from data
@@ -435,7 +437,7 @@ hold off;
 bleach_fraction = handles.bleach_fraction;
 nuc_area = handles.nuc_area;
 laser_area = handles.laser_area;
-save('FRAP.mat', 'pos*', 'sig*', 'unbleach*',...
+save(strcat(handles.filename,'.mat'), 'pos*', 'sig*', 'unbleach*',...
     '*ref*', 'bleach_fraction', '*_area');
 
 
