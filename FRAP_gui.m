@@ -560,12 +560,12 @@ function area_button_Callback(hObject, eventdata, handles)
 % handles    structure with handles and user data (see GUIDATA)
 %% Calculate percent of nucleus bleached
 %calculate areas of binary images
-nuc_stats = regionprops(handles.im_nuc_bin,'Area');
-laser_stats = regionprops(handles.im_bin,'Area');
-bleach_fraction = laser_stats.Area/nuc_stats.Area;
+nuc_area = sum(handles.im_nuc_bin(:));
+laser_area = sum(handles.im_bin(:));
+bleach_fraction = laser_area/nuc_area;
 set(handles.area_text, 'String', num2str(round(bleach_fraction,2)));
 %Update handles
-handles.nuc_area = nuc_stats.Area;
-handles.laser_area = laser_stats.Area;
+handles.nuc_area = nuc_area;
+handles.laser_area = laser_area;
 handles.bleach_fraction = bleach_fraction;
 guidata(hObject,handles);
